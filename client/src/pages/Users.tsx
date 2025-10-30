@@ -1,0 +1,1554 @@
+import { useEffect, useState } from 'react';
+import Layout from '../components/Layout';
+import { ProgressModal } from '../components/ProgressModal';
+import { logger } from '../utils/logger';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Badge } from '../components/ui/badge';
+import { Separator } from '../components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Twitter, Send, RefreshCw, Trash2, ExternalLink, Plus, Copy, Check, X, AlertTriangle, Loader2, Users as UsersIcon } from 'lucide-react';
+
+interface SocialUser {
+  id: number;
+  username: string;
+  twitterId: string;
+  followersCount: number | null;
+  isActive: boolean;
+  lastActive: string | null;
+  twitterAppId: number | null;
+  appName?: string | null;
+  createdAt: string;
+}
+
+interface TwitterApp {
+  id: number;
+  appName: string;
+  isActive: boolean;
+}
+
+export default function Users() {
+  const [users, setUsers] = useState<SocialUser[]>([]);
+  const [apps, setApps] = useState<TwitterApp[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Twitter Apps Management State
+  const [showAppsSection, setShowAppsSection] = useState(false);
+  const [newApp, setNewApp] = useState({ appName: '', clientId: '', clientSecret: '', callbackUrl: '' });
+  const [editingApp, setEditingApp] = useState<TwitterApp | null>(null);
+  const [showGenerateCallback, setShowGenerateCallback] = useState(false);
+  const [generatedCallback, setGeneratedCallback] = useState('');
+  const [testAuthModalOpen, setTestAuthModalOpen] = useState(false);
+  const [testAuthUrl, setTestAuthUrl] = useState('');
+  const [testingAppName, setTestingAppName] = useState('');
+  const [showBulkRefreshModal, setShowBulkRefreshModal] = useState(false);
+  const [bulkRefreshBatchSize, setBulkRefreshBatchSize] = useState(5);
+  const [bulkRefreshTokensPerApp, setBulkRefreshTokensPerApp] = useState(5);
+  
+  // Tweet History State
+  const [showTweetHistory, setShowTweetHistory] = useState(false);
+  const [tweetHistory, setTweetHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  
+  // General Post State
+  const [showGeneralPost, setShowGeneralPost] = useState(false);
+  const [generalPostText, setGeneralPostText] = useState('');
+  const [maxAppsToUse, setMaxAppsToUse] = useState(3);
+  const [useRandomApps, setUseRandomApps] = useState(true);
+  
+  // Posting state
+  const [postMode, setPostMode] = useState<'single' | 'bulk'>('single');
+  const [selectedUser, setSelectedUser] = useState<string>('');
+  const [tweetText, setTweetText] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // Bulk posting state
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [useRandomAccounts, setUseRandomAccounts] = useState(true);
+  const [numAccounts, setNumAccounts] = useState(3);
+  const [maxTweets, setMaxTweets] = useState<number | null>(null);
+  const [minDelay, setMinDelay] = useState(30);
+  const [maxDelay, setMaxDelay] = useState(120);
+  const [batchSize, setBatchSize] = useState(3);
+  const [tweetVariations, setTweetVariations] = useState<string[]>(['']);
+  const [usernameTagList, setUsernameTagList] = useState<string>('');
+  const [maxTagsPerPost, setMaxTagsPerPost] = useState(3);
+  const [quoteTweetUrl, setQuoteTweetUrl] = useState<string>('');
+  
+  // Duplicate management state
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateBy, setDuplicateBy] = useState<'username' | 'twitterId'>('username');
+  const [duplicateGroups, setDuplicateGroups] = useState<any[]>([]);
+  const [showDuplicatePreview, setShowDuplicatePreview] = useState(false);
+  
+  // Token validation state
+  const [validating, setValidating] = useState(false);
+  const [showBadTokens, setShowBadTokens] = useState(false);
+  const [badTokens, setBadTokens] = useState<any[]>([]);
+  
+  // App filter
+  const [appFilter, setAppFilter] = useState<'all' | number>('all');
+  
+  // Progress modal
+  const [progressModalOpen, setProgressModalOpen] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [progressTitle, setProgressTitle] = useState('');
+  
+  useEffect(() => {
+    fetchUsers();
+    fetchApps();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/users');
+      const data = await response.json();
+      if (data.success) {
+        setUsers(data.data);
+        logger.user(`Loaded ${data.data?.length || 0} users`);
+      }
+    } catch (error) {
+      logger.error('Failed to fetch users', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchApps = async () => {
+    try {
+      const response = await fetch('/api/twitter-apps');
+      const data = await response.json();
+      if (data.success) {
+        setApps(data.data);
+      }
+    } catch (error) {
+      logger.error('Failed to fetch Twitter apps for user filter', error);
+    }
+  };
+
+  const handlePostTweet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser || !tweetText) return;
+
+    setPosting(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch('/api/tweets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: selectedUser,
+          tweetText,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage({ type: 'success', text: `Tweet posted successfully! ID: ${data.tweetId}` });
+        setTweetText('');
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to post tweet' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to post tweet' });
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleBulkPost = async () => {
+    setPosting(true);
+    try {
+      const response = await fetch('/api/tweets/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          useRandomAccounts,
+          numAccounts: useRandomAccounts ? numAccounts : selectedAccounts.length,
+          selectedAccounts: useRandomAccounts ? undefined : selectedAccounts,
+          tweetVariations: tweetVariations.filter(t => t.trim()),
+          maxTweets: maxTweets || undefined,
+          minDelay,
+          maxDelay,
+          batchSize,
+          usernameTagList: usernameTagList.trim(),
+          maxTagsPerPost,
+          quoteTweetUrl: quoteTweetUrl.trim() || undefined,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.jobId) {
+        setCurrentJobId(data.jobId);
+        setProgressTitle('Bulk Posting Tweets');
+        setProgressModalOpen(true);
+        setShowBulkModal(false);
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to start bulk posting' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to start bulk posting' });
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleCheckDuplicates = async () => {
+    try {
+      const response = await fetch('/api/users/duplicates/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ by: duplicateBy }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setDuplicateGroups(data.groups || []);
+        setShowDuplicatePreview(true);
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to check duplicates' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to check duplicates' });
+    }
+  };
+
+  const handleFixDuplicates = async () => {
+    try {
+      const response = await fetch('/api/users/duplicates/fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ by: duplicateBy }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.jobId) {
+        setCurrentJobId(data.jobId);
+        setProgressTitle('Fixing Duplicates');
+        setProgressModalOpen(true);
+        setShowDuplicatePreview(false);
+        setShowDuplicateModal(false);
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to fix duplicates' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to fix duplicates' });
+    }
+  };
+
+  const handleValidateTokens = async () => {
+    setValidating(true);
+    try {
+      const response = await fetch('/api/users/validate-tokens', {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+      if (data.success && data.jobId) {
+        setCurrentJobId(data.jobId);
+        setProgressTitle('Validating Tokens');
+        setProgressModalOpen(true);
+      } else if (data.success && data.badTokens) {
+        setBadTokens(data.badTokens);
+        setShowBadTokens(true);
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to validate tokens' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to validate tokens' });
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  // Twitter Apps Management Functions
+  const handleCreateApp = async () => {
+    if (!newApp.appName || !newApp.clientId || !newApp.clientSecret) {
+      setMessage({ type: 'error', text: 'Please fill in all required fields' });
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/twitter-apps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newApp),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'Twitter app created successfully!' });
+        setNewApp({ appName: '', clientId: '', clientSecret: '', callbackUrl: '' });
+        // Add the new app to state instead of refetching
+        if (data.data) {
+          setApps([...apps, data.data]);
+        } else {
+          fetchApps(); // Fallback if no data returned
+        }
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to create app' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to create app' });
+    }
+  };
+
+  const handleUpdateApp = async (id: number, updates: Partial<TwitterApp>) => {
+    try {
+      const response = await fetch(`/api/twitter-apps/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'App updated successfully!' });
+        // Update app in state instead of refetching
+        setApps(apps.map(a => a.id === id ? { ...a, ...updates } : a));
+        setEditingApp(null);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to update app' });
+    }
+  };
+
+  const handleDeleteApp = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this app?')) return;
+    
+    try {
+      const response = await fetch(`/api/twitter-apps/${id}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'App deleted successfully!' });
+        // Remove app from state instead of refetching
+        setApps(apps.filter(a => a.id !== id));
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to delete app' });
+    }
+  };
+
+  const handleGenerateCallback = async () => {
+    try {
+      const response = await fetch('/api/twitter-apps/generate-callback', { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        setGeneratedCallback(data.callbackUrl);
+        setShowGenerateCallback(true);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to generate callback URL' });
+    }
+  };
+
+  const handleTestAuth = async (appId: number, appName: string) => {
+    try {
+      // Check current user count against limits
+      const app = apps.find(a => a.id === appId);
+      const currentUserCount = users.filter(u => u.twitterAppId === appId).length;
+      
+      // Twitter Free API limits: 1,500 tweets/month total
+      // This means realistically ~50 accounts posting 1 tweet/day
+      const freeApiUserLimit = 50;
+      const basicApiUserLimit = 500; // For Basic: 50,000 tweets/month
+      
+      if (currentUserCount >= freeApiUserLimit) {
+        const proceed = confirm(
+          `⚠️ WARNING: App "${appName}" already has ${currentUserCount} users.\n\n` +
+          `Twitter Free API Limit: 1,500 tweets/month\n` +
+          `With ${currentUserCount} users, you may exceed your monthly limit.\n\n` +
+          `Recommend upgrading to Basic tier ($100/month) for 50,000 tweets/month.\n\n` +
+          `Continue adding users anyway?`
+        );
+        if (!proceed) {
+          return;
+        }
+      }
+      
+      const response = await fetch(`/api/twitter-apps/${appId}/test-auth`, { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        setTestAuthUrl(data.authUrl);
+        setTestingAppName(appName);
+        setTestAuthModalOpen(true);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to generate test auth URL' });
+    }
+  };
+
+  const handleTestTweet = async (appId: number) => {
+    if (!confirm('This will post a test tweet from an account in this app. Continue?')) return;
+    
+    try {
+      const response = await fetch(`/api/twitter-apps/${appId}/test-tweet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: '' }) });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'Test tweet posted successfully!' });
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to post test tweet' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to post test tweet' });
+    }
+  };
+
+  const handleBulkRefreshTokens = async () => {
+    try {
+      const response = await fetch('/api/twitter-apps/bulk-refresh-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchSize: bulkRefreshBatchSize, tokensPerApp: bulkRefreshTokensPerApp }),
+      });
+      const data = await response.json();
+      if (data.success && data.jobId) {
+        setCurrentJobId(data.jobId);
+        setProgressTitle('Bulk Refresh Tokens');
+        setProgressModalOpen(true);
+        setShowBulkRefreshModal(false);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to start bulk refresh' });
+    }
+  };
+
+  const handleDeleteUser = async (userId: number, username: string) => {
+    if (!confirm(`Delete user @${username}?`)) return;
+    
+    try {
+      const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'User deleted successfully!' });
+        // Update state directly instead of refetching all users
+        setUsers(users.filter(u => u.id !== userId));
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to delete user' });
+    }
+  };
+
+  const handleRefreshUserToken = async (username: string) => {
+    try {
+      const response = await fetch(`/api/users/${username}/refresh`, { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: `Token refreshed for @${username}!` });
+        // Update state directly - just show success message, no need to refetch
+        // The token is refreshed in backend, user list doesn't visually change
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to refresh token' });
+    }
+  };
+
+  const fetchTweetHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const response = await fetch('/api/tweet-history');
+      const data = await response.json();
+      if (data.success) {
+        setTweetHistory(data.data);
+        logger.success(`Loaded ${data.data?.length || 0} tweet history records`);
+      }
+    } catch (error) {
+      logger.error('Failed to fetch tweet history', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleGeneralPost = async () => {
+    if (!generalPostText.trim()) {
+      setMessage({ type: 'error', text: 'Please enter a message' });
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/tweets/general-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: generalPostText,
+          maxAppsToUse,
+          useRandomApps,
+          batchSettings: { batchSize: 5, delayBetweenBatches: 2000 },
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: `Posted to ${data.successful}/${data.total} accounts!` });
+        setShowGeneralPost(false);
+        setGeneralPostText('');
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to execute general post' });
+    }
+  };
+
+  // Note: Add User functionality removed - use Test Auth button on each Twitter app instead
+  // This ensures each OAuth flow is linked to a specific app for proper user-app association
+
+  const addTweetVariation = () => {
+    setTweetVariations([...tweetVariations, '']);
+  };
+
+  const updateTweetVariation = (index: number, value: string) => {
+    const updated = [...tweetVariations];
+    updated[index] = value;
+    setTweetVariations(updated);
+  };
+
+  const removeTweetVariation = (index: number) => {
+    if (tweetVariations.length > 1) {
+      setTweetVariations(tweetVariations.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleBulkImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0 && line.length <= 280);
+      
+      if (lines.length > 0) {
+        setTweetVariations(lines);
+        alert(`✅ Imported ${lines.length} tweet variation(s) from file`);
+      } else {
+        alert('❌ No valid variations found in file');
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  };
+
+  const handleBulkImportPaste = (text: string) => {
+    const lines = text.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && line.length <= 280);
+    
+    if (lines.length > 0) {
+      setTweetVariations(lines);
+      alert(`✅ Imported ${lines.length} tweet variation(s) from paste`);
+    } else {
+      alert('❌ No valid variations found');
+    }
+  };
+
+  const toggleAccountSelection = (username: string) => {
+    if (selectedAccounts.includes(username)) {
+      setSelectedAccounts(selectedAccounts.filter(u => u !== username));
+    } else {
+      setSelectedAccounts([...selectedAccounts, username]);
+    }
+  };
+
+  const filteredUsers = appFilter === 'all' 
+    ? users 
+    : users.filter(u => u.twitterAppId === appFilter);
+
+  if (loading) {
+    return (
+      <Layout>
+        <p style={{ color: '#fff' }}>Loading...</p>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      {/* Header */}
+      <div style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+        <h1 style={{ fontSize: '32px', color: '#fff' }}>Twitter Management Dashboard</h1>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button onClick={() => setShowAppsSection(!showAppsSection)} style={buttonStyle(showAppsSection ? '#6366f1' : '#3b82f6')}>
+            {showAppsSection ? 'Hide' : 'Show'} Apps
+          </button>
+          <button onClick={() => { fetchTweetHistory(); setShowTweetHistory(!showTweetHistory); }} style={buttonStyle(showTweetHistory ? '#10b981' : '#059669')}>
+            {showTweetHistory ? 'Hide' : 'Show'} History
+          </button>
+          <button onClick={() => { setShowAppsSection(true); window.scrollTo(0, 0); }} style={buttonStyle('#10b981')}>➕ Add User</button>
+          <button onClick={() => setShowGeneralPost(true)} style={buttonStyle('#8b5cf6')}>General Post</button>
+          <button onClick={() => setShowBulkRefreshModal(true)} style={buttonStyle('#f59e0b')}>Bulk Refresh</button>
+          <button onClick={() => setShowBulkModal(true)} style={buttonStyle('#8b5cf6')}>Bulk Post</button>
+          <button onClick={() => setShowDuplicateModal(true)} style={buttonStyle('#f59e0b')}>Check Duplicates</button>
+          <button onClick={handleValidateTokens} disabled={validating} style={buttonStyle('#10b981')}>
+            {validating ? 'Validating...' : 'Validate Tokens'}
+          </button>
+        </div>
+      </div>
+
+      {/* Twitter Apps Management Section */}
+      {showAppsSection && (
+        <div style={{ ...cardStyle, marginBottom: '30px' }}>
+          <div style={{ background: '#10b981', padding: '12px', borderRadius: '8px', marginBottom: '20px', border: '2px solid #34d399' }}>
+            <p style={{ color: '#fff', fontSize: '16px', fontWeight: 'bold' }}>
+              ℹ️ To add a new user: Click the blue "Test Auth" button on any active Twitter app below
+            </p>
+          </div>
+          <h2 style={{ fontSize: '24px', color: '#fff', marginBottom: '20px' }}>📱 Twitter Apps Management ({apps.length})</h2>
+          
+          {/* Generate Callback URL */}
+          <div style={{ marginBottom: '20px', padding: '15px', background: '#0f172a', borderRadius: '8px', border: '1px solid #334155' }}>
+            <h3 style={{ color: '#cbd5e1', marginBottom: '10px' }}>Generate Callback URL</h3>
+            <button onClick={handleGenerateCallback} style={buttonStyle('#3b82f6', 'auto')}>
+              Generate Callback URL
+            </button>
+          </div>
+
+          {/* Add New App Form */}
+          <div style={{ marginBottom: '30px', padding: '15px', background: '#0f172a', borderRadius: '8px', border: '1px solid #334155' }}>
+            <h3 style={{ color: '#cbd5e1', marginBottom: '15px' }}>➕ Add New Twitter App</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px', marginBottom: '15px' }}>
+              <div>
+                <label style={labelStyle}>App Name *</label>
+                <input
+                  type="text"
+                  value={newApp.appName}
+                  onChange={(e) => setNewApp({...newApp, appName: e.target.value})}
+                  style={inputStyle}
+                  placeholder="My Twitter App"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Client ID *</label>
+                <input
+                  type="text"
+                  value={newApp.clientId}
+                  onChange={(e) => setNewApp({...newApp, clientId: e.target.value})}
+                  style={inputStyle}
+                  placeholder="Client ID from Twitter Developer Portal"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Client Secret *</label>
+                <input
+                  type="password"
+                  value={newApp.clientSecret}
+                  onChange={(e) => setNewApp({...newApp, clientSecret: e.target.value})}
+                  style={inputStyle}
+                  placeholder="Client Secret"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Callback URL (optional)</label>
+                <input
+                  type="text"
+                  value={newApp.callbackUrl}
+                  onChange={(e) => setNewApp({...newApp, callbackUrl: e.target.value})}
+                  style={inputStyle}
+                  placeholder="https://yourapp.com/auth/callback"
+                />
+              </div>
+            </div>
+            <button onClick={handleCreateApp} style={buttonStyle('#10b981', 'auto')}>
+              Create App
+            </button>
+          </div>
+
+          {/* Apps List */}
+          <div style={{ marginTop: '20px' }}>
+            <h3 style={{ color: '#cbd5e1', marginBottom: '15px' }}>Existing Apps</h3>
+            {apps.length === 0 ? (
+              <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>No Twitter apps configured yet. Add one above!</p>
+            ) : (
+              <div style={{ display: 'grid', gap: '15px' }}>
+                {apps.map(app => (
+                  <div key={app.id} style={{ padding: '15px', background: '#0f172a', borderRadius: '8px', border: `1px solid ${app.isActive ? '#10b981' : '#ef4444'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ color: '#fff', fontSize: '18px', marginBottom: '8px' }}>{app.appName}</h4>
+                        <p style={{ color: '#94a3b8', fontSize: '14px' }}>
+                          <strong>Status:</strong> {app.isActive ? '✅ Active' : '❌ Inactive'} | <strong>Users:</strong> {users.filter(u => u.twitterAppId === app.id).length}
+                        </p>
+                        <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>
+                          💡 <strong>Free API Limit:</strong> ~50 users max (1,500 tweets/month) | <strong>Basic:</strong> ~500 users (50K tweets/month)
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button 
+                          onClick={() => handleUpdateApp(app.id, { isActive: !app.isActive })} 
+                          style={{...buttonStyle(app.isActive ? '#f59e0b' : '#10b981', 'auto'), padding: '8px 16px', fontSize: '12px'}}
+                        >
+                          {app.isActive ? 'Disable' : 'Enable'}
+                        </button>
+                        <button 
+                          onClick={() => handleTestAuth(app.id, app.appName)} 
+                          style={{...buttonStyle('#3b82f6', 'auto'), padding: '8px 16px', fontSize: '12px', fontWeight: 'bold'}}
+                          disabled={!app.isActive}
+                        >
+                          🔐 Test Auth (Add Users)
+                        </button>
+                        <button 
+                          onClick={() => handleTestTweet(app.id)} 
+                          style={{...buttonStyle('#8b5cf6', 'auto'), padding: '8px 16px', fontSize: '12px'}}
+                        >
+                          Test Tweet
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteApp(app.id)} 
+                          style={{...buttonStyle('#ef4444', 'auto'), padding: '8px 16px', fontSize: '12px'}}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tweet History Section */}
+      {showTweetHistory && (
+        <div style={{ ...cardStyle, marginBottom: '30px' }}>
+          <h2 style={{ fontSize: '24px', color: '#fff', marginBottom: '20px' }}>📊 Tweet History</h2>
+          {loadingHistory ? (
+            <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>Loading...</p>
+          ) : tweetHistory.length === 0 ? (
+            <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>No tweets posted yet.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #334155' }}>
+                    <th style={{ padding: '12px', textAlign: 'left', color: '#cbd5e1' }}>Username</th>
+                    <th style={{ padding: '12px', textAlign: 'left', color: '#cbd5e1' }}>Tweet</th>
+                    <th style={{ padding: '12px', textAlign: 'left', color: '#cbd5e1' }}>Type</th>
+                    <th style={{ padding: '12px', textAlign: 'left', color: '#cbd5e1' }}>Status</th>
+                    <th style={{ padding: '12px', textAlign: 'left', color: '#cbd5e1' }}>Posted At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tweetHistory.slice(0, 20).map((tweet, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '12px', color: '#fff' }}>@{tweet.username}</td>
+                      <td style={{ padding: '12px', color: '#94a3b8', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tweet.tweetText}</td>
+                      <td style={{ padding: '12px', color: '#cbd5e1' }}>{tweet.tweetType}</td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          background: tweet.success ? '#10b981' : '#ef4444',
+                          color: '#fff'
+                        }}>
+                          {tweet.success ? 'Success' : 'Failed'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px', color: '#94a3b8', fontSize: '14px' }}>{new Date(tweet.postedAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      <h2 style={{ fontSize: '24px', color: '#fff', marginBottom: '20px' }}>👥 Authenticated Users ({users.length})</h2>
+
+      {/* Filter by App */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1' }}>Filter by App:</label>
+        <select
+          value={appFilter}
+          onChange={(e) => setAppFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          style={inputStyle}
+        >
+          <option value="all">All Apps ({users.length})</option>
+          {apps.map(app => (
+            <option key={app.id} value={app.id}>
+              {app.appName} ({users.filter(u => u.twitterAppId === app.id).length})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Message */}
+      {message && (
+        <div style={{
+          padding: '12px 16px',
+          marginBottom: '20px',
+          borderRadius: '8px',
+          background: message.type === 'success' ? '#dcfce7' : '#fee2e2',
+          color: message.type === 'success' ? '#166534' : '#991b1b',
+        }}>
+          {message.text}
+        </div>
+      )}
+
+      {/* Single Post Form */}
+      {users.length > 0 && postMode === 'single' && (
+        <div style={cardStyle}>
+          <h2 style={{ marginBottom: '20px', color: '#fff' }}>Post Single Tweet</h2>
+          <form onSubmit={handlePostTweet}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Select User</label>
+              <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} required style={inputStyle}>
+                <option value="">Choose a user...</option>
+                {filteredUsers.filter(u => u.isActive).map((user) => (
+                  <option key={user.id} value={user.username}>
+                    @{user.username} - {user.appName || 'No App'} ({user.followersCount} followers)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Tweet Text ({tweetText.length}/280)</label>
+              <textarea
+                value={tweetText}
+                onChange={(e) => setTweetText(e.target.value)}
+                maxLength={280}
+                rows={4}
+                required
+                style={inputStyle}
+                placeholder="What's happening?"
+              />
+            </div>
+
+            <button type="submit" disabled={posting} style={buttonStyle('#1d9bf0')}>
+              {posting ? 'Posting...' : 'Post Tweet'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Users List - Enhanced with shadcn Cards */}
+      <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <UsersIcon className="h-5 w-5" />
+            Authenticated Users ({filteredUsers.length})
+          </CardTitle>
+          <CardDescription className="text-slate-400">
+            Manage Twitter accounts and OAuth tokens
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8 text-slate-400">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+              Loading users...
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <UsersIcon className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="text-lg">{appFilter === 'all' ? 'No authenticated users yet.' : 'No users for this app.'}</p>
+              <p className="text-sm mt-2">Authenticate with Twitter to get started</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredUsers.map((user) => (
+                <div key={user.id} className="bg-slate-800 p-4 rounded-lg border border-slate-600 hover:border-slate-500 transition-colors">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1">
+                      <h3 className="font-bold text-white text-lg">@{user.username}</h3>
+                      <p className="text-slate-400 text-sm">ID: {user.twitterId}</p>
+                    </div>
+                    <Badge 
+                      variant={user.isActive ? "default" : "secondary"}
+                      className={user.isActive ? 'bg-green-600' : 'bg-gray-600'}
+                    >
+                      {user.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </div>
+                  
+                  <div className="space-y-1 mb-3 text-sm text-slate-400">
+                    <div className="flex items-center gap-2">
+                      <Twitter className="h-3 w-3" />
+                      <span>App: {user.appName || 'None'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <UsersIcon className="h-3 w-3" />
+                      <span>{user.followersCount?.toLocaleString() || 0} followers</span>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Joined {new Date(user.createdAt).toLocaleDateString()}
+                      {user.lastActive && <> • Active {new Date(user.lastActive).toLocaleDateString()}</>}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRefreshUserToken(user.username)}
+                      className="flex-1 border-blue-600 text-blue-400 hover:bg-blue-600 hover:text-white"
+                      title="Refresh OAuth token"
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Refresh
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeleteUser(user.id, user.username)}
+                      className="border-red-600 text-red-400 hover:bg-red-600 hover:text-white"
+                      title="Delete this user"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Tweet History Table */}
+      <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm mt-6">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Twitter className="h-5 w-5" />
+                Tweet History
+              </CardTitle>
+              <CardDescription className="text-slate-400">
+                Recent tweet posting activity (last 100 tweets)
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTweetHistory(!showTweetHistory)}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700"
+            >
+              {showTweetHistory ? 'Hide' : 'Show'} History
+            </Button>
+          </div>
+        </CardHeader>
+        {showTweetHistory && (
+          <CardContent>
+            {loadingHistory ? (
+              <div className="text-center py-8 text-slate-400">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+                Loading tweet history...
+              </div>
+            ) : tweetHistory.length === 0 ? (
+              <div className="text-center py-8 text-slate-400">
+                No tweets posted yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-slate-700 rounded-lg bg-slate-800/30">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-slate-700">
+                      <TableHead className="text-slate-300">Username</TableHead>
+                      <TableHead className="text-slate-300">Tweet</TableHead>
+                      <TableHead className="text-slate-300">Type</TableHead>
+                      <TableHead className="text-slate-300">Status</TableHead>
+                      <TableHead className="text-slate-300">Posted At</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tweetHistory.slice(0, 20).map((tweet, index) => (
+                      <TableRow key={index} className="border-slate-700">
+                        <TableCell className="text-white font-medium">@{tweet.username}</TableCell>
+                        <TableCell className="text-slate-300 max-w-xs truncate">
+                          {tweet.tweetText || tweet.text || 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="border-slate-600 text-slate-300">
+                            {tweet.tweetType || tweet.type || 'post'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={tweet.success ? "default" : "destructive"}
+                            className={tweet.success ? "bg-green-600" : "bg-red-600"}
+                          >
+                            {tweet.success ? 'Success' : 'Failed'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-slate-300 text-sm">
+                          {tweet.postedAt ? new Date(tweet.postedAt).toLocaleString() : 'N/A'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Bulk Post Modal */}
+      {showBulkModal && (
+        <Modal onClose={() => setShowBulkModal(false)} title="Bulk Post Tweets">
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>
+              <input
+                type="checkbox"
+                checked={useRandomAccounts}
+                onChange={(e) => setUseRandomAccounts(e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Use Random Accounts
+            </label>
+          </div>
+
+          {useRandomAccounts ? (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Number of Accounts</label>
+              <input
+                type="number"
+                min="1"
+                max={users.length}
+                value={numAccounts}
+                onChange={(e) => setNumAccounts(Number(e.target.value))}
+                style={inputStyle}
+              />
+            </div>
+          ) : (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Select Accounts ({selectedAccounts.length} selected)</label>
+              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {users.filter(u => u.isActive).map(user => (
+                  <label key={user.id} style={{ display: 'block', marginBottom: '8px', color: '#cbd5e1' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedAccounts.includes(user.username)}
+                      onChange={() => toggleAccountSelection(user.username)}
+                      style={{ marginRight: '8px' }}
+                    />
+                    @{user.username}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Import Section */}
+          <div style={{ marginBottom: '16px', padding: '16px', background: '#1e293b', borderRadius: '8px', border: '1px solid #334155' }}>
+            <label style={{ ...labelStyle, marginBottom: '12px', display: 'block' }}>
+              Bulk Import Variations
+              <span style={{ color: '#64748b', fontSize: '12px', marginLeft: '8px' }}>
+                Import multiple tweet variations at once (one per line, max 280 chars each)
+              </span>
+            </label>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* File Upload */}
+              <div>
+                <label style={{ ...labelStyle, fontSize: '13px', marginBottom: '8px', display: 'block', color: '#94a3b8' }}>
+                  📁 Upload .txt File
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={handleBulkImportFile}
+                  style={{
+                    ...inputStyle,
+                    padding: '8px',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                />
+                <div style={{ marginTop: '6px', fontSize: '11px', color: '#64748b' }}>
+                  Each line will be a variation
+                </div>
+              </div>
+
+              {/* Paste Import */}
+              <div>
+                <label style={{ ...labelStyle, fontSize: '13px', marginBottom: '8px', display: 'block', color: '#94a3b8' }}>
+                  📋 Paste Multiple Lines
+                </label>
+                <textarea
+                  placeholder="Paste variations here (one per line)..."
+                  rows={3}
+                  style={{ ...inputStyle, fontSize: '13px', marginBottom: '6px' }}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const text = e.clipboardData.getData('text');
+                    handleBulkImportPaste(text);
+                  }}
+                />
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  Paste and variations will import automatically
+                </div>
+              </div>
+            </div>
+
+            {tweetVariations.length > 0 && tweetVariations[0] !== '' && (
+              <div style={{ marginTop: '12px', padding: '8px', background: '#0f172a', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                <span style={{ color: '#10b981', fontSize: '12px' }}>
+                  ✓ {tweetVariations.length} variation(s) ready
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Tweet Variations</label>
+            {tweetVariations.map((variation, index) => (
+              <div key={index} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <textarea
+                  value={variation}
+                  onChange={(e) => updateTweetVariation(index, e.target.value)}
+                  placeholder={`Variation ${index + 1}`}
+                  maxLength={280}
+                  rows={2}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                {tweetVariations.length > 1 && (
+                  <button onClick={() => removeTweetVariation(index)} style={buttonStyle('#ef4444', '40px')}>×</button>
+                )}
+              </div>
+            ))}
+            <button onClick={addTweetVariation} style={buttonStyle('#3b82f6')}>+ Add Variation</button>
+          </div>
+
+          {/* Username Tagging Section */}
+          <div style={{ marginBottom: '16px', padding: '16px', background: '#1e293b', borderRadius: '8px', border: '1px solid #334155' }}>
+            <label style={{ ...labelStyle, marginBottom: '8px', display: 'block' }}>
+              Username Tags (Optional)
+              <span style={{ color: '#64748b', fontSize: '12px', marginLeft: '8px' }}>
+                Enter usernames to randomly tag in tweets (one per line)
+              </span>
+            </label>
+            <textarea
+              value={usernameTagList}
+              onChange={(e) => setUsernameTagList(e.target.value)}
+              placeholder="@username1&#10;@username2&#10;@username3"
+              rows={4}
+              style={{ ...inputStyle, marginBottom: '12px', fontFamily: 'monospace' }}
+            />
+            <div>
+              <label style={{ ...labelStyle, marginBottom: '8px', display: 'block' }}>
+                Max Tags Per Post
+                <span style={{ color: '#64748b', fontSize: '12px', marginLeft: '8px' }}>
+                  How many random tags to add to each tweet
+                </span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={maxTagsPerPost}
+                onChange={(e) => setMaxTagsPerPost(Number(e.target.value))}
+                style={{ ...inputStyle, width: '100px' }}
+              />
+            </div>
+          </div>
+
+          {/* Quote Tweet Section */}
+          <div style={{ marginBottom: '16px', padding: '16px', background: '#1e293b', borderRadius: '8px', border: '1px solid #334155' }}>
+            <label style={{ ...labelStyle, marginBottom: '8px', display: 'block' }}>
+              Quote Tweet URL (Optional)
+              <span style={{ color: '#64748b', fontSize: '12px', marginLeft: '8px' }}>
+                Add a tweet URL to quote in all posts
+              </span>
+            </label>
+            <input
+              type="text"
+              value={quoteTweetUrl}
+              onChange={(e) => setQuoteTweetUrl(e.target.value)}
+              placeholder="https://twitter.com/username/status/1234567890"
+              style={{ ...inputStyle, fontFamily: 'monospace' }}
+            />
+            {quoteTweetUrl && (
+              <div style={{ marginTop: '8px', padding: '8px', background: '#0f172a', borderRadius: '4px', border: '1px solid #1e293b' }}>
+                <span style={{ color: '#10b981', fontSize: '12px' }}>✓ All tweets will quote this URL</span>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={labelStyle}>Min Delay (s)</label>
+              <input type="number" value={minDelay} onChange={(e) => setMinDelay(Number(e.target.value))} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Max Delay (s)</label>
+              <input type="number" value={maxDelay} onChange={(e) => setMaxDelay(Number(e.target.value))} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Batch Size</label>
+              <input type="number" value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value))} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>
+                Max Tweets (Optional)
+                <span style={{ color: '#64748b', fontSize: '11px', marginLeft: '4px' }}>Leave empty for unlimited</span>
+              </label>
+              <input 
+                type="number" 
+                min="1"
+                placeholder="Unlimited"
+                value={maxTweets || ''} 
+                onChange={(e) => setMaxTweets(e.target.value ? Number(e.target.value) : null)} 
+                style={inputStyle} 
+              />
+            </div>
+          </div>
+
+          <button onClick={handleBulkPost} disabled={posting} style={buttonStyle('#1d9bf0')}>
+            {posting ? 'Starting...' : 'Start Bulk Post'}
+          </button>
+        </Modal>
+      )}
+
+      {/* Duplicate Modal */}
+      {showDuplicateModal && (
+        <Modal onClose={() => setShowDuplicateModal(false)} title="Check Duplicates">
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Check by:</label>
+            <select value={duplicateBy} onChange={(e) => setDuplicateBy(e.target.value as any)} style={inputStyle}>
+              <option value="username">Username</option>
+              <option value="twitterId">Twitter ID</option>
+            </select>
+          </div>
+          <button onClick={handleCheckDuplicates} style={buttonStyle('#f59e0b')}>Preview Duplicates</button>
+
+          {showDuplicatePreview && duplicateGroups.length > 0 && (
+            <div style={{ marginTop: '20px' }}>
+              <h3 style={{ color: '#fff', marginBottom: '10px' }}>Found {duplicateGroups.length} duplicate groups:</h3>
+              <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '15px' }}>
+                {duplicateGroups.map((group, i) => (
+                  <div key={i} style={{ ...cardStyle, marginBottom: '10px', padding: '12px' }}>
+                    <strong style={{ color: '#f59e0b' }}>{group.key}</strong>: {group.count} duplicates
+                  </div>
+                ))}
+              </div>
+              <button onClick={handleFixDuplicates} style={buttonStyle('#ef4444')}>Fix Duplicates</button>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* Bad Tokens Modal */}
+      {showBadTokens && badTokens.length > 0 && (
+        <Modal onClose={() => setShowBadTokens(false)} title={`Bad Tokens (${badTokens.length})`}>
+          <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {badTokens.map((token, i) => (
+              <div key={i} style={{ ...cardStyle, marginBottom: '10px', padding: '12px' }}>
+                <strong style={{ color: '#ef4444' }}>@{token.username}</strong>
+                <p style={{ color: '#94a3b8', fontSize: '14px', marginTop: '5px' }}>{token.error}</p>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {/* General Post Modal */}
+      {showGeneralPost && (
+        <Modal onClose={() => setShowGeneralPost(false)} title="General Post Session">
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Post Message</label>
+            <textarea
+              value={generalPostText}
+              onChange={(e) => setGeneralPostText(e.target.value)}
+              style={{ ...inputStyle, minHeight: '100px' }}
+              placeholder="Enter your post content..."
+              maxLength={280}
+            />
+            <div style={{ color: '#94a3b8', fontSize: '12px', textAlign: 'right', marginTop: '4px' }}>
+              {generalPostText.length}/280 characters
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div>
+              <label style={labelStyle}>Max Apps to Use</label>
+              <input
+                type="number"
+                value={maxAppsToUse}
+                onChange={(e) => setMaxAppsToUse(parseInt(e.target.value) || 1)}
+                min="1"
+                max={apps.filter(a => a.isActive).length}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>
+                <input
+                  type="checkbox"
+                  checked={useRandomApps}
+                  onChange={(e) => setUseRandomApps(e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                Use Random Apps
+              </label>
+            </div>
+          </div>
+
+          <div style={{ background: '#0f172a', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>
+            <h4 style={{ color: '#cbd5e1', marginBottom: '8px' }}>Batch Settings:</h4>
+            <div style={{ color: '#94a3b8', fontSize: '14px' }}>
+              <div>• Batch Size: 5 accounts per batch</div>
+              <div>• Delay: 2 seconds between batches</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={handleGeneralPost} style={{ ...buttonStyle('#10b981'), flex: 1 }}>
+              Post to Multiple Apps
+            </button>
+            <button onClick={() => setShowGeneralPost(false)} style={{ ...buttonStyle('#64748b'), width: 'auto' }}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Bulk Refresh Configuration Modal */}
+      {showBulkRefreshModal && (
+        <Modal onClose={() => setShowBulkRefreshModal(false)} title="🔄 Bulk Refresh Configuration">
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Batch Size (Apps per batch)</label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={bulkRefreshBatchSize}
+              onChange={(e) => setBulkRefreshBatchSize(parseInt(e.target.value) || 5)}
+              style={inputStyle}
+            />
+            <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>
+              Process this many apps at once (recommended: 3-5)
+            </p>
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Tokens per App</label>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={bulkRefreshTokensPerApp}
+              onChange={(e) => setBulkRefreshTokensPerApp(parseInt(e.target.value) || 5)}
+              style={inputStyle}
+            />
+            <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>
+              Maximum tokens to refresh per app (recommended: 5-10)
+            </p>
+          </div>
+
+          <div style={{ background: '#713f12', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #f59e0b' }}>
+            <p style={{ color: '#fbbf24', fontSize: '14px' }}>
+              <strong>⚠️ Rate Limit Protection:</strong> Lower values reduce API calls but take longer. 
+              Recommended settings help avoid Twitter API rate limits.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={handleBulkRefreshTokens} style={{ ...buttonStyle('#10b981'), flex: 1 }}>
+              Start Bulk Refresh
+            </button>
+            <button onClick={() => setShowBulkRefreshModal(false)} style={{ ...buttonStyle('#64748b'), width: 'auto' }}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Test Auth Modal */}
+      {testAuthModalOpen && (
+        <Modal onClose={() => setTestAuthModalOpen(false)} title={`🔐 Test OAuth for ${testingAppName}`}>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>OAuth Test URL</label>
+            <div style={{ background: '#0f172a', padding: '12px', borderRadius: '6px', border: '1px solid #334155' }}>
+              <code style={{ color: '#10b981', fontSize: '13px', wordBreak: 'break-all' }}>
+                {testAuthUrl}
+              </code>
+            </div>
+          </div>
+
+          <div style={{ background: '#1e3a8a', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #3b82f6' }}>
+            <h4 style={{ color: '#60a5fa', marginBottom: '8px' }}>Testing Instructions:</h4>
+            <ol style={{ color: '#cbd5e1', fontSize: '14px', paddingLeft: '20px' }}>
+              <li>Copy the URL above</li>
+              <li>Open it in a new browser tab</li>
+              <li>Complete the X (Twitter) OAuth flow</li>
+              <li>Verify you're redirected back successfully</li>
+              <li>Check that a new user appears in the Connected Accounts section</li>
+            </ol>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(testAuthUrl);
+                setMessage({ type: 'success', text: 'URL copied to clipboard!' });
+              }}
+              style={{ ...buttonStyle('#10b981'), flex: 1 }}
+            >
+              📋 Copy URL
+            </button>
+            <button
+              onClick={() => window.open(testAuthUrl, '_blank')}
+              style={{ ...buttonStyle('#3b82f6'), flex: 1 }}
+            >
+              🔗 Open in New Tab
+            </button>
+            <button onClick={() => setTestAuthModalOpen(false)} style={{ ...buttonStyle('#64748b'), width: 'auto' }}>
+              Close
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Generate Callback Modal */}
+      {showGenerateCallback && (
+        <Modal onClose={() => setShowGenerateCallback(false)} title="📞 Generated Callback URL">
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Callback URL</label>
+            <div style={{ background: '#0f172a', padding: '12px', borderRadius: '6px', border: '1px solid #334155' }}>
+              <code style={{ color: '#10b981', fontSize: '13px', wordBreak: 'break-all' }}>
+                {generatedCallback}
+              </code>
+            </div>
+          </div>
+
+          <div style={{ background: '#1e3a8a', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #3b82f6' }}>
+            <h4 style={{ color: '#60a5fa', marginBottom: '8px' }}>Setup Instructions:</h4>
+            <ol style={{ color: '#cbd5e1', fontSize: '14px', paddingLeft: '20px' }}>
+              <li>Go to your Twitter Developer Portal</li>
+              <li>Select your app and go to Settings</li>
+              <li>Add this callback URL to your OAuth 2.0 settings</li>
+              <li>Make sure to save the changes</li>
+              <li>Use this exact URL when creating the Twitter app in this system</li>
+            </ol>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(generatedCallback);
+                setMessage({ type: 'success', text: 'Callback URL copied!' });
+              }}
+              style={{ ...buttonStyle('#10b981'), flex: 1 }}
+            >
+              📋 Copy URL
+            </button>
+            <button onClick={() => setShowGenerateCallback(false)} style={{ ...buttonStyle('#64748b'), width: 'auto' }}>
+              Close
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Progress Modal */}
+      <ProgressModal
+        open={progressModalOpen}
+        onOpenChange={(open) => {
+          setProgressModalOpen(open);
+          if (!open) {
+            setCurrentJobId(null);
+            // Don't auto-fetch - modal completion callback will refresh if needed
+          }
+        }}
+        jobId={currentJobId}
+        title={progressTitle}
+        onComplete={(success, data) => {
+          if (success && data?.badTokens) {
+            setBadTokens(data.badTokens);
+            setShowBadTokens(true);
+          }
+          // Only fetch users if the job actually modified user data
+          // For validate_tokens, we don't need to refresh - just show bad tokens modal
+          // For bulk_refresh and duplicate_fixer, we DO need to refresh
+          const jobNeedsRefresh = ['bulk_refresh', 'duplicate_fixer'].includes(data?.type || '');
+          if (success && jobNeedsRefresh) {
+            fetchUsers();
+          }
+        }}
+      />
+    </Layout>
+  );
+}
+
+// Styles
+const cardStyle: React.CSSProperties = {
+  background: '#1e293b',
+  padding: '24px',
+  borderRadius: '12px',
+  border: '1px solid #334155',
+  marginBottom: '20px',
+};
+
+const buttonStyle = (bg: string, width?: string): React.CSSProperties => ({
+  padding: '12px 24px',
+  borderRadius: '6px',
+  border: 'none',
+  background: bg,
+  color: '#fff',
+  fontSize: '14px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  width: width || 'auto',
+});
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px',
+  borderRadius: '6px',
+  border: '1px solid #334155',
+  background: '#0f172a',
+  color: '#fff',
+};
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  marginBottom: '8px',
+  color: '#cbd5e1',
+};
+
+// Modal Component
+function Modal({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+    }}>
+      <div style={{
+        backgroundColor: '#1e293b',
+        borderRadius: '12px',
+        padding: '30px',
+        maxWidth: '600px',
+        width: '90%',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        color: 'white',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '24px' }}>{title}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer' }}>
+            ×
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}

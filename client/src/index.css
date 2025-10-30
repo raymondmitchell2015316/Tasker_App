@@ -1,0 +1,136 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 0%);
+  --foreground: hsl(0, 0%, 100%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(0, 0%, 10.2%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(271, 100%, 65%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(240, 3.7%, 15.9%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+  --radius: 0.5rem;
+  --solana-purple: hsl(271, 100%, 65%);
+  --solana-green: hsl(158, 81%, 52%);
+  --solana-cyan: hsl(192, 100%, 50%);
+  --dark-card: hsl(0, 0%, 10.2%);
+  --dark-bg: hsl(0, 0%, 0%);
+}
+
+.dark {
+  --background: hsl(0, 0%, 0%);
+  --foreground: hsl(0, 0%, 100%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(0, 0%, 10.2%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(271, 100%, 65%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(240, 3.7%, 15.9%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased bg-black text-white;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .bg-solana-purple {
+    background-color: var(--solana-purple);
+  }
+  
+  .bg-solana-green {
+    background-color: var(--solana-green);
+  }
+  
+  .bg-solana-cyan {
+    background-color: var(--solana-cyan);
+  }
+  
+  .text-solana-purple {
+    color: var(--solana-purple);
+  }
+  
+  .text-solana-green {
+    color: var(--solana-green);
+  }
+  
+  .text-solana-cyan {
+    color: var(--solana-cyan);
+  }
+  
+  .bg-dark-card {
+    background-color: var(--dark-card);
+  }
+  
+  .bg-gradient-solana {
+    background: linear-gradient(135deg, var(--solana-purple) 0%, var(--solana-green) 100%);
+  }
+  
+  .bg-gradient-dark {
+    background: linear-gradient(135deg, var(--dark-card) 0%, hsl(0, 0%, 16.5%) 100%);
+  }
+  
+  .text-gradient-solana {
+    background: linear-gradient(135deg, var(--solana-purple) 0%, var(--solana-green) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .border-solana-purple {
+    border-color: var(--solana-purple);
+  }
+  
+  .border-solana-green {
+    border-color: var(--solana-green);
+  }
+  
+  .border-solana-cyan {
+    border-color: var(--solana-cyan);
+  }
+  
+  @keyframes pulse-slow {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+  
+  .animate-pulse-slow {
+    animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
