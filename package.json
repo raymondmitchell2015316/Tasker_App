@@ -4,7 +4,7 @@
   "description": "Twitter Task Automation Platform",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts & vite",
+    "dev": "npm run build && NODE_ENV=development tsx server/index.ts",
     "dev:server": "NODE_ENV=development tsx server/index.ts",
     "dev:client": "vite",
     "build": "vite build",
